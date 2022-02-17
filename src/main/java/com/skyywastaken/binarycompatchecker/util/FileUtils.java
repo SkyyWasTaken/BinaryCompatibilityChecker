@@ -2,39 +2,16 @@ package com.skyywastaken.binarycompatchecker.util;
 
 import jdk.internal.org.objectweb.asm.tree.ClassNode;
 
-import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 public class FileUtils {
-    public static boolean isZipFile(File passedFile) {
-        if (!passedFile.isFile() || passedFile.length() < 4) {
-            return false;
-        }
-        DataInputStream dataInputStream;
-        try {
-            dataInputStream = new DataInputStream((new BufferedInputStream(new FileInputStream(passedFile))));
-        } catch (FileNotFoundException e) {
-            return false;
-        }
-        int magicNumber;
-        try {
-            magicNumber = dataInputStream.readInt();
-            dataInputStream.close();
-        } catch(IOException e) {
-            return false;
-        }
-        return magicNumber == 0x504b0304;
-    }
 
     public static boolean isClassFile(byte[] passedBytes) {
         if(passedBytes.length < 4) {
@@ -46,10 +23,6 @@ public class FileUtils {
         int byteFour = Byte.toUnsignedInt(passedBytes[3]);
 
         return byteOne == 0xCA && byteTwo == 0xFE && byteThree == 0xBA && byteFour == 0xBE;
-    }
-
-    public static boolean isClass(File passedFile) {
-        return false;
     }
 
     public static byte[] readByteArray(InputStream passedStream) throws IOException {
@@ -69,42 +42,27 @@ public class FileUtils {
         return outputStream.toByteArray();
     }
 
-    public static List<ClassNode> getAllClassFilesInZip(ZipInputStream zipStream) {
-        ArrayList<ClassNode> returnList = new ArrayList<>();
-        ZipEntry currentEntry = getNextEntry(zipStream);
-        while (currentEntry != null) {
-            if (currentEntry.isDirectory()) {
-                currentEntry = getNextEntry(zipStream);
-                continue;
-            }
-            byte[] possibleClass;
-            try {
-                possibleClass = FileUtils.readByteArray(zipStream);
-            } catch (IOException e) {
-                currentEntry = getNextEntry(zipStream);
-                continue;
-            }
-            if (!FileUtils.isClassFile(possibleClass)) {
-                currentEntry = getNextEntry(zipStream);
-                continue;
-            }
-            ClassNode newClassNode = ASMUtils.getClassNode(possibleClass);
-            returnList.add(newClassNode);
-        }
+    public static List<ClassNode> getClassesInDirectory(File passedFile) {
+        ArrayList<Path> paths = new ArrayList<>();
         try {
-            zipStream.closeEntry();
-            zipStream.close();
-        } catch (IOException ignored) {
-
-        }
-        return returnList;
-    }
-
-    private static ZipEntry getNextEntry(ZipInputStream inputStream) {
-        try {
-            return inputStream.getNextEntry();
+            Files.walk(passedFile.toPath()).filter(Files::isRegularFile).forEach(paths::add);
         } catch (IOException e) {
-            return null;
+            e.printStackTrace();
+            System.exit(-1);
         }
+        ArrayList<ClassNode> classes = new ArrayList<>();
+        for (Path path : paths) {
+            byte[] potentialClass;
+            try {
+                potentialClass = Files.readAllBytes(path);
+            } catch (IOException ignored) {
+                continue;
+            }
+            if (FileUtils.isClassFile(potentialClass)) {
+                ClassNode newClassNode = ASMUtils.getClassNode(potentialClass);
+                classes.add(newClassNode);
+            }
+        }
+        return classes;
     }
 }
